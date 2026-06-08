@@ -85,14 +85,22 @@
         tg.expand();
     }
 
-    const API_URL = "http://127.0.0.1:8000";
+    const API_URL = "https://telegram-notes-app-5wnw.onrender.com";
+
+    let userId = 0;
+
+    if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
+        userId = tg.initDataUnsafe.user.id;
+    } else {
+        userId = 123; // для проверки в обычном браузере
+    }
 
     async function loadNotes() {
         const notesList = document.getElementById("notesList");
         notesList.innerHTML = "Загрузка заметок...";
 
         try {
-            const response = await fetch(`${API_URL}/notes`);
+            const response = await fetch(`${API_URL}/notes?user_id=${userId}`);
             const notes = await response.json();
 
             notesList.innerHTML = "";
@@ -129,7 +137,10 @@
                 headers: {
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify({ text: text })
+                body: JSON.stringify({
+                    user_id: userId,
+                    text: text
+                })
             });
 
             textarea.value = "";

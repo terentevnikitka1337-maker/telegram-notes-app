@@ -1,8 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
 from datetime import datetime
+import os
 
 app = FastAPI()
 
@@ -16,6 +17,7 @@ app.add_middleware(
 
 
 class NoteCreate(BaseModel):
+    user_id: int
     text: str
 
 
@@ -26,10 +28,18 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS notes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
             text TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
     """)
+
+    # На случай, если таблица уже была создана раньше без user_id
+    cursor.execute("PRAGMA table_info(notes)")
+    columns = [column[1] for column in cursor.fetchall()]
+
+    if "user_id" not in columns:
+        cursor.execute("ALTER TABLE notes ADD COLUMN user_id INTEGER DEFAULT 0")
 
     conn.commit()
     conn.close()
@@ -44,16 +54,20 @@ def home():
 
 
 @app.get("/notes")
-def get_notes():
+def get_notes(user_id: int = Query(...)):
     conn = sqlite3.connect("notes.db")
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id, text, created_at FROM notes ORDER BY id DESC")
-    rows = cursor.fetchall()
+    cursor.execute(
+        "SELECT id, text, created_at FROM notes WHERE user_id = ? ORDER BY id DESC",
+        (user_id,)
+    )
 
+    rows = cursor.fetchall()
     conn.close()
 
     notes = []
+
     for row in rows:
         notes.append({
             "id": row[0],
@@ -70,8 +84,8 @@ def create_note(note: NoteCreate):
     cursor = conn.cursor()
 
     cursor.execute(
-        "INSERT INTO notes (text, created_at) VALUES (?, ?)",
-        (note.text, datetime.now().isoformat())
+        "INSERT INTO notes (user_id, text, created_at) VALUES (?, ?, ?)",
+        (note.user_id, note.text, datetime.now().isoformat())
     )
 
     conn.commit()
@@ -82,7 +96,6 @@ def create_note(note: NoteCreate):
 
 if __name__ == "__main__":
     import uvicorn
-    import os
 
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
