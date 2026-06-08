@@ -20,6 +20,10 @@ class NoteCreate(BaseModel):
     user_id: int
     text: str
 
+class NoteUpdate(BaseModel):
+    user_id: int
+    text: str
+
 
 def init_db():
     conn = sqlite3.connect("notes.db")
@@ -111,6 +115,25 @@ def delete_note(note_id: int, user_id: int = Query(...)):
         return {"message": "Заметка не найдена или принадлежит другому пользователю"}
 
     return {"message": "Заметка удалена"}
+
+@app.put("/notes/{note_id}")
+def update_note(note_id: int, note: NoteUpdate):
+    conn = sqlite3.connect("notes.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "UPDATE notes SET text = ? WHERE id = ? AND user_id = ?",
+        (note.text, note_id, note.user_id)
+    )
+
+    conn.commit()
+    updated_count = cursor.rowcount
+    conn.close()
+
+    if updated_count == 0:
+        return {"message": "Заметка не найдена или принадлежит другому пользователю"}
+
+    return {"message": "Заметка обновлена"}
 
 
 if __name__ == "__main__":

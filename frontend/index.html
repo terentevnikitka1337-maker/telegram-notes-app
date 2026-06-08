@@ -117,14 +117,20 @@
                 const textDiv = document.createElement("div");
                 textDiv.textContent = note.text;
 
+                const editButton = document.createElement("button");
+                editButton.textContent = "Редактировать";
+                editButton.style.marginTop = "10px";
+                editButton.style.background = "#2ea6ff";
+                editButton.onclick = () => editNote(note.id, note.text);
+
                 const deleteButton = document.createElement("button");
                 deleteButton.textContent = "Удалить";
                 deleteButton.style.marginTop = "10px";
                 deleteButton.style.background = "#ff4d4d";
-
                 deleteButton.onclick = () => deleteNote(note.id);
 
                 div.appendChild(textDiv);
+                div.appendChild(editButton);
                 div.appendChild(deleteButton);
 
                 notesList.appendChild(div);
@@ -160,6 +166,39 @@
             loadNotes();
         } catch (error) {
             alert("Ошибка при сохранении заметки");
+            console.error(error);
+        }
+    }
+
+    async function editNote(noteId, oldText) {
+        const newText = prompt("Измени текст заметки:", oldText);
+
+        if (newText === null) {
+            return;
+        }
+
+        const trimmedText = newText.trim();
+
+        if (!trimmedText) {
+            alert("Заметка не может быть пустой");
+            return;
+        }
+
+        try {
+            await fetch(`${API_URL}/notes/${noteId}`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    user_id: userId,
+                    text: trimmedText
+                })
+            });
+
+            loadNotes();
+        } catch (error) {
+            alert("Ошибка при редактировании заметки");
             console.error(error);
         }
     }
