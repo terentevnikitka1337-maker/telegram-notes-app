@@ -113,7 +113,20 @@
             notes.forEach((note) => {
                 const div = document.createElement("div");
                 div.className = "note";
-                div.textContent = note.text;
+
+                const textDiv = document.createElement("div");
+                textDiv.textContent = note.text;
+
+                const deleteButton = document.createElement("button");
+                deleteButton.textContent = "Удалить";
+                deleteButton.style.marginTop = "10px";
+                deleteButton.style.background = "#ff4d4d";
+
+                deleteButton.onclick = () => deleteNote(note.id);
+
+                div.appendChild(textDiv);
+                div.appendChild(deleteButton);
+
                 notesList.appendChild(div);
             });
         } catch (error) {
@@ -147,6 +160,25 @@
             loadNotes();
         } catch (error) {
             alert("Ошибка при сохранении заметки");
+            console.error(error);
+        }
+    }
+
+    async function deleteNote(noteId) {
+        const confirmDelete = confirm("Удалить эту заметку?");
+
+        if (!confirmDelete) {
+            return;
+        }
+
+        try {
+            await fetch(`${API_URL}/notes/${noteId}?user_id=${userId}`, {
+                method: "DELETE"
+            });
+
+            loadNotes();
+        } catch (error) {
+            alert("Ошибка при удалении заметки");
             console.error(error);
         }
     }

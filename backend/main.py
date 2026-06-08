@@ -93,6 +93,25 @@ def create_note(note: NoteCreate):
 
     return {"message": "Заметка сохранена"}
 
+@app.delete("/notes/{note_id}")
+def delete_note(note_id: int, user_id: int = Query(...)):
+    conn = sqlite3.connect("notes.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "DELETE FROM notes WHERE id = ? AND user_id = ?",
+        (note_id, user_id)
+    )
+
+    conn.commit()
+    deleted_count = cursor.rowcount
+    conn.close()
+
+    if deleted_count == 0:
+        return {"message": "Заметка не найдена или принадлежит другому пользователю"}
+
+    return {"message": "Заметка удалена"}
+
 
 if __name__ == "__main__":
     import uvicorn
