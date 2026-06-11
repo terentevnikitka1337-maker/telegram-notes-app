@@ -36,6 +36,17 @@ class NotePinUpdate(BaseModel):
     pinned: int
 
 
+class TaskCreate(BaseModel):
+    user_id: int
+    title: str
+
+
+class TaskUpdate(BaseModel):
+    user_id: int
+    title: str
+    completed: int
+
+
 def get_moscow_time():
     return datetime.now(ZoneInfo("Europe/Moscow"))
 
@@ -77,22 +88,32 @@ def init_db():
     """)
 
     cursor.execute("PRAGMA table_info(notes)")
-    columns = [column[1] for column in cursor.fetchall()]
+    note_columns = [column[1] for column in cursor.fetchall()]
 
-    if "user_id" not in columns:
+    if "user_id" not in note_columns:
         cursor.execute("ALTER TABLE notes ADD COLUMN user_id INTEGER DEFAULT 0")
 
-    if "title" not in columns:
+    if "title" not in note_columns:
         cursor.execute("ALTER TABLE notes ADD COLUMN title TEXT DEFAULT ''")
 
-    if "pinned" not in columns:
+    if "pinned" not in note_columns:
         cursor.execute("ALTER TABLE notes ADD COLUMN pinned INTEGER DEFAULT 0")
 
-    if "reminder_at" not in columns:
+    if "reminder_at" not in note_columns:
         cursor.execute("ALTER TABLE notes ADD COLUMN reminder_at TEXT DEFAULT NULL")
 
-    if "reminder_sent" not in columns:
+    if "reminder_sent" not in note_columns:
         cursor.execute("ALTER TABLE notes ADD COLUMN reminder_sent INTEGER DEFAULT 0")
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            completed INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        )
+    """)
 
     conn.commit()
     conn.close()
@@ -103,7 +124,7 @@ init_db()
 
 @app.get("/")
 def home():
-    return {"message": "Backend для заметок работает"}
+    return {"message": "Backend для заметок и задач работает"}
 
 
 @app.get("/notes")
@@ -176,7 +197,7 @@ def update_note(note_id: int, note: NoteUpdate):
     cursor = conn.cursor()
 
     reminder_at = normalize_reminder_time(note.reminder_at)
-    reminder_sent = 0 if reminder_at else 0
+    reminder_sent = 0
 
     cursor.execute(
         """
@@ -297,6 +318,110 @@ def mark_reminder_sent(note_id: int):
     conn.close()
 
     return {"message": "Напоминание отмечено как отправленное"}
+
+
+@app.get("/tasks")
+def get_tasks(user_id: int = Query(...)):
+    conn = sqlite3.connect("notes.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, title, completed, created_at
+        FROM tasks
+        WHERE user_id = ?
+        ORDER BY completed ASC, id DESC
+        """,
+        (user_id,)
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    tasks = []
+
+    for row in rows:
+        tasks.append({
+            "id": row[0],
+            "title": row[1],
+            "completed": row[2],
+            "created_at": row[3]
+        })
+
+    return tasks
+
+
+@app.post("/tasks")
+def create_task(task: TaskCreate):
+    conn = sqlite3.connect("notes.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO tasks (user_id, title, completed, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            task.user_id,
+            task.title,
+            0,
+            get_moscow_time_iso()
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {"message": "Задача создана"}
+
+
+@app.put("/tasks/{task_id}")
+def update_task(task_id: int, task: TaskUpdate):
+    conn = sqlite3.connect("notes.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE tasks
+        SET title = ?, completed = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (
+            task.title,
+            task.completed,
+            task_id,
+            task.user_id
+        )
+    )
+
+    conn.commit()
+    updated_count = cursor.rowcount
+    conn.close()
+
+    if updated_count == 0:
+        return {"message": "Задача не найдена или принадлежит другому пользователю"}
+
+    return {"message": "Задача обновлена"}
+
+
+@app.delete("/tasks/{task_id}")
+def delete_task(task_id: int, user_id: int = Query(...)):
+    conn = sqlite3.connect("notes.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "DELETE FROM tasks WHERE id = ? AND user_id = ?",
+        (task_id, user_id)
+    )
+
+    conn.commit()
+    deleted_count = cursor.rowcount
+    conn.close()
+
+    if deleted_count == 0:
+        return {"message": "Задача не найдена или принадлежит другому пользователю"}
+
+    return {"message": "Задача удалена"}
 
 
 if __name__ == "__main__":

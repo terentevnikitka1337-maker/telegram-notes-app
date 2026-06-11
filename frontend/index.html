@@ -513,13 +513,16 @@
         const pinnedText = note.pinned === 1 ? "<div class='pin-label'>📌 Закреплено</div>" : "";
 
         let reminderText = "";
+        let clearReminderButton = "";
 
         if (note.reminder_at && note.reminder_sent === 0) {
             reminderText = `<div class="view-reminder">🔔 Напомнить: ${formatReminderDate(note.reminder_at)}</div>`;
+            clearReminderButton = `<button class="cancel-btn" onclick="clearReminder(${note.id})">Убрать напоминание</button>`;
         }
 
         if (note.reminder_at && note.reminder_sent === 1) {
             reminderText = `<div class="view-reminder">✅ Напоминание отправлено</div>`;
+            clearReminderButton = `<button class="cancel-btn" onclick="clearReminder(${note.id})">Убрать напоминание</button>`;
         }
 
         app.innerHTML = `
@@ -539,6 +542,7 @@
                 <div class="view-actions">
                     <button class="edit-btn" onclick="showEditFormFromView(${note.id})">Редактировать</button>
                     <button class="delete-btn" onclick="showDeleteFormFromView(${note.id})">Удалить</button>
+                    ${clearReminderButton}
                 </div>
             </div>
         `;
@@ -647,6 +651,33 @@
 
     async function deleteNoteFromView(noteId) {
         await deleteNote(noteId, true);
+    }
+
+    async function clearReminder(noteId) {
+        const note = findNoteById(noteId);
+
+        if (!note) {
+            showMainPage();
+            return;
+        }
+
+        try {
+            await fetch(`${API_URL}/notes/${noteId}`, {
+                method: "PUT",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    user_id: userId,
+                    title: note.title,
+                    text: note.text,
+                    reminder_at: null
+                })
+            });
+
+            await refreshNotes();
+            openNotePage(findNoteById(noteId));
+        } catch (error) {
+            console.error(error);
+        }
     }
 
     async function saveNote() {
