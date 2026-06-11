@@ -21,12 +21,14 @@ class NoteCreate(BaseModel):
     user_id: int
     title: str
     text: str
+    reminder_at: str | None = None
 
 
 class NoteUpdate(BaseModel):
     user_id: int
     title: str
     text: str
+    reminder_at: str | None = None
 
 
 class NotePinUpdate(BaseModel):
@@ -35,7 +37,26 @@ class NotePinUpdate(BaseModel):
 
 
 def get_moscow_time():
-    return datetime.now(ZoneInfo("Europe/Moscow")).isoformat()
+    return datetime.now(ZoneInfo("Europe/Moscow"))
+
+
+def get_moscow_time_iso():
+    return get_moscow_time().isoformat()
+
+
+def normalize_reminder_time(reminder_at):
+    if not reminder_at:
+        return None
+
+    try:
+        dt = datetime.fromisoformat(reminder_at)
+
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("Europe/Moscow"))
+
+        return dt.isoformat()
+    except Exception:
+        return None
 
 
 def init_db():
@@ -49,7 +70,9 @@ def init_db():
             title TEXT NOT NULL DEFAULT '',
             text TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            pinned INTEGER NOT NULL DEFAULT 0
+            pinned INTEGER NOT NULL DEFAULT 0,
+            reminder_at TEXT DEFAULT NULL,
+            reminder_sent INTEGER NOT NULL DEFAULT 0
         )
     """)
 
@@ -64,6 +87,12 @@ def init_db():
 
     if "pinned" not in columns:
         cursor.execute("ALTER TABLE notes ADD COLUMN pinned INTEGER DEFAULT 0")
+
+    if "reminder_at" not in columns:
+        cursor.execute("ALTER TABLE notes ADD COLUMN reminder_at TEXT DEFAULT NULL")
+
+    if "reminder_sent" not in columns:
+        cursor.execute("ALTER TABLE notes ADD COLUMN reminder_sent INTEGER DEFAULT 0")
 
     conn.commit()
     conn.close()
@@ -84,7 +113,7 @@ def get_notes(user_id: int = Query(...)):
 
     cursor.execute(
         """
-        SELECT id, title, text, created_at, pinned
+        SELECT id, title, text, created_at, pinned, reminder_at, reminder_sent
         FROM notes
         WHERE user_id = ?
         ORDER BY pinned DESC, id DESC
@@ -103,7 +132,9 @@ def get_notes(user_id: int = Query(...)):
             "title": row[1],
             "text": row[2],
             "created_at": row[3],
-            "pinned": row[4]
+            "pinned": row[4],
+            "reminder_at": row[5],
+            "reminder_sent": row[6]
         })
 
     return notes
@@ -114,9 +145,23 @@ def create_note(note: NoteCreate):
     conn = sqlite3.connect("notes.db")
     cursor = conn.cursor()
 
+    reminder_at = normalize_reminder_time(note.reminder_at)
+
     cursor.execute(
-        "INSERT INTO notes (user_id, title, text, created_at, pinned) VALUES (?, ?, ?, ?, ?)",
-        (note.user_id, note.title, note.text, get_moscow_time(), 0)
+        """
+        INSERT INTO notes 
+        (user_id, title, text, created_at, pinned, reminder_at, reminder_sent) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            note.user_id,
+            note.title,
+            note.text,
+            get_moscow_time_iso(),
+            0,
+            reminder_at,
+            0
+        )
     )
 
     conn.commit()
@@ -130,9 +175,23 @@ def update_note(note_id: int, note: NoteUpdate):
     conn = sqlite3.connect("notes.db")
     cursor = conn.cursor()
 
+    reminder_at = normalize_reminder_time(note.reminder_at)
+    reminder_sent = 0 if reminder_at else 0
+
     cursor.execute(
-        "UPDATE notes SET title = ?, text = ? WHERE id = ? AND user_id = ?",
-        (note.title, note.text, note_id, note.user_id)
+        """
+        UPDATE notes 
+        SET title = ?, text = ?, reminder_at = ?, reminder_sent = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (
+            note.title,
+            note.text,
+            reminder_at,
+            reminder_sent,
+            note_id,
+            note.user_id
+        )
     )
 
     conn.commit()
@@ -186,6 +245,58 @@ def delete_note(note_id: int, user_id: int = Query(...)):
         return {"message": "Заметка не найдена или принадлежит другому пользователю"}
 
     return {"message": "Заметка удалена"}
+
+
+@app.get("/reminders/due")
+def get_due_reminders():
+    now_iso = get_moscow_time_iso()
+
+    conn = sqlite3.connect("notes.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, user_id, title, text, reminder_at
+        FROM notes
+        WHERE reminder_at IS NOT NULL
+        AND reminder_sent = 0
+        AND reminder_at <= ?
+        ORDER BY reminder_at ASC
+        """,
+        (now_iso,)
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    reminders = []
+
+    for row in rows:
+        reminders.append({
+            "id": row[0],
+            "user_id": row[1],
+            "title": row[2],
+            "text": row[3],
+            "reminder_at": row[4]
+        })
+
+    return reminders
+
+
+@app.put("/reminders/{note_id}/sent")
+def mark_reminder_sent(note_id: int):
+    conn = sqlite3.connect("notes.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "UPDATE notes SET reminder_sent = 1 WHERE id = ?",
+        (note_id,)
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {"message": "Напоминание отмечено как отправленное"}
 
 
 if __name__ == "__main__":
