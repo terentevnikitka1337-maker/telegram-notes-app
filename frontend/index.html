@@ -30,6 +30,13 @@
             margin-bottom: 20px;
         }
 
+        label {
+            display: block;
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 6px;
+        }
+
         input,
         textarea {
             width: 100%;
@@ -141,6 +148,13 @@
             margin-top: 6px;
         }
 
+        .reminder-label {
+            color: #2ea6ff;
+            font-size: 13px;
+            font-weight: bold;
+            margin-top: 8px;
+        }
+
         .form-error {
             color: #ff4d4d;
             margin-top: 10px;
@@ -194,6 +208,13 @@
             color: #777;
             padding-top: 12px;
             border-top: 1px solid #eee;
+            margin-bottom: 8px;
+        }
+
+        .view-reminder {
+            font-size: 13px;
+            color: #2ea6ff;
+            font-weight: bold;
             margin-bottom: 12px;
         }
 
@@ -221,6 +242,12 @@
     >
 
     <textarea id="noteText" placeholder="Напиши заметку..."></textarea>
+
+    <label for="noteReminder">Напомнить</label>
+    <input
+        type="datetime-local"
+        id="noteReminder"
+    >
 
     <button class="save-btn" onclick="saveNote()">Сохранить заметку</button>
 
@@ -284,6 +311,12 @@
             >
 
             <textarea id="noteText" placeholder="Напиши заметку..."></textarea>
+
+            <label for="noteReminder">Напомнить</label>
+            <input
+                type="datetime-local"
+                id="noteReminder"
+            >
 
             <button class="save-btn" onclick="saveNote()">Сохранить заметку</button>
 
@@ -352,6 +385,42 @@
         return date.toLocaleString("ru-RU");
     }
 
+    function formatReminderDate(dateString) {
+        if (!dateString) {
+            return "";
+        }
+
+        return formatDate(dateString);
+    }
+
+    function convertDatetimeLocalToIso(value) {
+        if (!value) {
+            return null;
+        }
+
+        return value;
+    }
+
+    function convertIsoToDatetimeLocal(value) {
+        if (!value) {
+            return "";
+        }
+
+        const date = new Date(value);
+
+        if (isNaN(date.getTime())) {
+            return "";
+        }
+
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        const hours = String(date.getHours()).padStart(2, "0");
+        const minutes = String(date.getMinutes()).padStart(2, "0");
+
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+
     async function loadNotes() {
         const notesList = document.getElementById("notesList");
 
@@ -407,6 +476,24 @@
         dateDiv.className = "note-date";
         dateDiv.textContent = formatDate(note.created_at);
 
+        div.appendChild(titleDiv);
+        div.appendChild(previewDiv);
+        div.appendChild(dateDiv);
+
+        if (note.reminder_at && note.reminder_sent === 0) {
+            const reminderDiv = document.createElement("div");
+            reminderDiv.className = "reminder-label";
+            reminderDiv.textContent = "🔔 Напомнить: " + formatReminderDate(note.reminder_at);
+            div.appendChild(reminderDiv);
+        }
+
+        if (note.reminder_at && note.reminder_sent === 1) {
+            const reminderDiv = document.createElement("div");
+            reminderDiv.className = "reminder-label";
+            reminderDiv.textContent = "✅ Напоминание отправлено";
+            div.appendChild(reminderDiv);
+        }
+
         const pinButton = document.createElement("button");
         pinButton.className = "pin-btn";
         pinButton.textContent = note.pinned === 1 ? "Открепить" : "Закрепить";
@@ -415,9 +502,6 @@
             togglePin(note.id, note.pinned);
         };
 
-        div.appendChild(titleDiv);
-        div.appendChild(previewDiv);
-        div.appendChild(dateDiv);
         div.appendChild(pinButton);
 
         notesList.appendChild(div);
@@ -427,6 +511,16 @@
         const app = getAppContainer();
 
         const pinnedText = note.pinned === 1 ? "<div class='pin-label'>📌 Закреплено</div>" : "";
+
+        let reminderText = "";
+
+        if (note.reminder_at && note.reminder_sent === 0) {
+            reminderText = `<div class="view-reminder">🔔 Напомнить: ${formatReminderDate(note.reminder_at)}</div>`;
+        }
+
+        if (note.reminder_at && note.reminder_sent === 1) {
+            reminderText = `<div class="view-reminder">✅ Напоминание отправлено</div>`;
+        }
 
         app.innerHTML = `
             <button class="back-btn" onclick="showMainPage()">← Назад</button>
@@ -439,6 +533,8 @@
                 <div class="view-text">${escapeHtml(note.text)}</div>
 
                 <div class="view-date">Создано: ${formatDate(note.created_at)}</div>
+
+                ${reminderText}
 
                 <div class="view-actions">
                     <button class="edit-btn" onclick="showEditFormFromView(${note.id})">Редактировать</button>
@@ -491,6 +587,13 @@
 
                 <textarea id="viewEditText" style="min-height: 160px;">${escapeHtml(note.text || "")}</textarea>
 
+                <label for="viewEditReminder">Напомнить</label>
+                <input
+                    type="datetime-local"
+                    id="viewEditReminder"
+                    value="${convertIsoToDatetimeLocal(note.reminder_at)}"
+                >
+
                 <div class="view-actions">
                     <button class="edit-btn" onclick="updateNoteFromView(${note.id})">Сохранить</button>
                     <button class="cancel-btn" onclick="openNotePage(findNoteById(${note.id}))">Отмена</button>
@@ -502,9 +605,17 @@
     async function updateNoteFromView(noteId) {
         const titleInput = document.getElementById("viewEditTitle");
         const textarea = document.getElementById("viewEditText");
+        const reminderInput = document.getElementById("viewEditReminder");
         const errorElement = document.getElementById("viewEditError");
 
-        await updateNote(noteId, titleInput.value, textarea.value, errorElement, true);
+        await updateNote(
+            noteId,
+            titleInput.value,
+            textarea.value,
+            reminderInput.value,
+            errorElement,
+            true
+        );
     }
 
     function showDeleteFormFromView(noteId) {
@@ -541,9 +652,11 @@
     async function saveNote() {
         const titleInput = document.getElementById("noteTitle");
         const textarea = document.getElementById("noteText");
+        const reminderInput = document.getElementById("noteReminder");
 
         const title = titleInput.value.trim();
         const text = textarea.value.trim();
+        const reminderAt = convertDatetimeLocalToIso(reminderInput.value);
 
         clearFormError();
 
@@ -569,12 +682,14 @@
                 body: JSON.stringify({
                     user_id: userId,
                     title: title,
-                    text: text
+                    text: text,
+                    reminder_at: reminderAt
                 })
             });
 
             titleInput.value = "";
             textarea.value = "";
+            reminderInput.value = "";
             clearFormError();
             loadNotes();
         } catch (error) {
@@ -583,9 +698,10 @@
         }
     }
 
-    async function updateNote(noteId, newTitle, newText, errorElement, returnToView = false) {
+    async function updateNote(noteId, newTitle, newText, newReminderAt, errorElement, returnToView = false) {
         const title = newTitle.trim();
         const text = newText.trim();
+        const reminderAt = convertDatetimeLocalToIso(newReminderAt);
 
         errorElement.textContent = "";
 
@@ -611,7 +727,8 @@
                 body: JSON.stringify({
                     user_id: userId,
                     title: title,
-                    text: text
+                    text: text,
+                    reminder_at: reminderAt
                 })
             });
 
