@@ -18,10 +18,13 @@ app.add_middleware(
 
 class NoteCreate(BaseModel):
     user_id: int
+    title: str
     text: str
+
 
 class NoteUpdate(BaseModel):
     user_id: int
+    title: str
     text: str
 
 
@@ -33,17 +36,21 @@ def init_db():
         CREATE TABLE IF NOT EXISTS notes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
             text TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
     """)
 
-    # На случай, если таблица уже была создана раньше без user_id
+    # Если таблица была создана раньше без нужных колонок — добавим их
     cursor.execute("PRAGMA table_info(notes)")
     columns = [column[1] for column in cursor.fetchall()]
 
     if "user_id" not in columns:
         cursor.execute("ALTER TABLE notes ADD COLUMN user_id INTEGER DEFAULT 0")
+
+    if "title" not in columns:
+        cursor.execute("ALTER TABLE notes ADD COLUMN title TEXT DEFAULT ''")
 
     conn.commit()
     conn.close()
@@ -63,7 +70,7 @@ def get_notes(user_id: int = Query(...)):
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT id, text, created_at FROM notes WHERE user_id = ? ORDER BY id DESC",
+        "SELECT id, title, text, created_at FROM notes WHERE user_id = ? ORDER BY id DESC",
         (user_id,)
     )
 
@@ -75,8 +82,9 @@ def get_notes(user_id: int = Query(...)):
     for row in rows:
         notes.append({
             "id": row[0],
-            "text": row[1],
-            "created_at": row[2]
+            "title": row[1],
+            "text": row[2],
+            "created_at": row[3]
         })
 
     return notes
@@ -88,14 +96,35 @@ def create_note(note: NoteCreate):
     cursor = conn.cursor()
 
     cursor.execute(
-        "INSERT INTO notes (user_id, text, created_at) VALUES (?, ?, ?)",
-        (note.user_id, note.text, datetime.now().isoformat())
+        "INSERT INTO notes (user_id, title, text, created_at) VALUES (?, ?, ?, ?)",
+        (note.user_id, note.title, note.text, datetime.now().isoformat())
     )
 
     conn.commit()
     conn.close()
 
     return {"message": "Заметка сохранена"}
+
+
+@app.put("/notes/{note_id}")
+def update_note(note_id: int, note: NoteUpdate):
+    conn = sqlite3.connect("notes.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "UPDATE notes SET title = ?, text = ? WHERE id = ? AND user_id = ?",
+        (note.title, note.text, note_id, note.user_id)
+    )
+
+    conn.commit()
+    updated_count = cursor.rowcount
+    conn.close()
+
+    if updated_count == 0:
+        return {"message": "Заметка не найдена или принадлежит другому пользователю"}
+
+    return {"message": "Заметка обновлена"}
+
 
 @app.delete("/notes/{note_id}")
 def delete_note(note_id: int, user_id: int = Query(...)):
@@ -115,25 +144,6 @@ def delete_note(note_id: int, user_id: int = Query(...)):
         return {"message": "Заметка не найдена или принадлежит другому пользователю"}
 
     return {"message": "Заметка удалена"}
-
-@app.put("/notes/{note_id}")
-def update_note(note_id: int, note: NoteUpdate):
-    conn = sqlite3.connect("notes.db")
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "UPDATE notes SET text = ? WHERE id = ? AND user_id = ?",
-        (note.text, note_id, note.user_id)
-    )
-
-    conn.commit()
-    updated_count = cursor.rowcount
-    conn.close()
-
-    if updated_count == 0:
-        return {"message": "Заметка не найдена или принадлежит другому пользователю"}
-
-    return {"message": "Заметка обновлена"}
 
 
 if __name__ == "__main__":
