@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sqlite3
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import os
 
 app = FastAPI()
@@ -31,6 +32,10 @@ class NoteUpdate(BaseModel):
 class NotePinUpdate(BaseModel):
     user_id: int
     pinned: int
+
+
+def get_moscow_time():
+    return datetime.now(ZoneInfo("Europe/Moscow")).isoformat()
 
 
 def init_db():
@@ -111,7 +116,7 @@ def create_note(note: NoteCreate):
 
     cursor.execute(
         "INSERT INTO notes (user_id, title, text, created_at, pinned) VALUES (?, ?, ?, ?, ?)",
-        (note.user_id, note.title, note.text, datetime.now().isoformat(), 0)
+        (note.user_id, note.title, note.text, get_moscow_time(), 0)
     )
 
     conn.commit()
