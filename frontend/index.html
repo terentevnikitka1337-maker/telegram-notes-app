@@ -30,27 +30,57 @@
             margin-bottom: 20px;
         }
 
+        input,
         textarea {
             width: 100%;
-            min-height: 120px;
             padding: 12px;
             font-size: 16px;
             box-sizing: border-box;
             border-radius: 10px;
             border: 1px solid #ccc;
+            margin-bottom: 10px;
+            font-family: Arial, sans-serif;
+        }
+
+        textarea {
+            min-height: 120px;
             resize: vertical;
         }
 
         button {
-            width: 100%;
-            margin-top: 12px;
-            padding: 14px;
             border: none;
+            border-radius: 8px;
+            padding: 9px 12px;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            margin-top: 10px;
+            margin-right: 5px;
+        }
+
+        .save-btn {
+            width: 100%;
+            padding: 14px;
             border-radius: 10px;
             background: #2ea6ff;
-            color: white;
             font-size: 16px;
-            cursor: pointer;
+            margin-right: 0;
+        }
+
+        .edit-btn {
+            background: #2ea6ff;
+        }
+
+        .delete-btn {
+            background: #ff4d4d;
+        }
+
+        .cancel-btn {
+            background: #777;
+        }
+
+        .pin-btn {
+            background: #f5a623;
         }
 
         .notes {
@@ -63,7 +93,53 @@
             border-radius: 10px;
             margin-bottom: 10px;
             border: 1px solid #ddd;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
             white-space: pre-wrap;
+        }
+
+        .note-pinned {
+            border: 2px solid #f5a623;
+            background: #fffaf0;
+        }
+
+        .note-title {
+            font-weight: bold;
+            font-size: 17px;
+            margin-bottom: 6px;
+        }
+
+        .note-text {
+            font-size: 15px;
+        }
+
+        .note-date {
+            font-size: 12px;
+            color: #666;
+            margin-top: 6px;
+        }
+
+        .form-error {
+            color: #ff4d4d;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        .empty-text {
+            color: #666;
+            font-size: 15px;
+        }
+
+        .delete-warning {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #ff4d4d;
+        }
+
+        .pin-label {
+            color: #f5a623;
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 6px;
         }
     </style>
 </head>
@@ -72,10 +148,24 @@
     <h1>Мои заметки</h1>
     <div class="subtitle">Быстрые заметки внутри Telegram</div>
 
-    <textarea id="noteText" placeholder="Напиши заметку..."></textarea>
-    <button onclick="saveNote()">Сохранить заметку</button>
+    <input
+        type="text"
+        id="noteTitle"
+        placeholder="Заголовок заметки..."
+    >
 
-    <input type="text" id="searchInput" placeholder="Поиск заметки...">
+    <textarea id="noteText" placeholder="Напиши заметку..."></textarea>
+
+    <button class="save-btn" onclick="saveNote()">Сохранить заметку</button>
+
+    <div id="formError" class="form-error"></div>
+
+    <input
+        type="text"
+        id="searchInput"
+        placeholder="Поиск заметки..."
+        style="margin-top: 20px;"
+    >
 
     <div class="notes" id="notesList"></div>
 </div>
@@ -94,18 +184,49 @@
     if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
         userId = tg.initDataUnsafe.user.id;
     } else {
-        userId = 123; // для теста в браузере
+        userId = 123;
     }
 
     const searchInput = document.getElementById("searchInput");
-    searchInput.addEventListener("input", () => {
-        const query = searchInput.value.toLowerCase();
-        const notes = document.querySelectorAll(".note");
-        notes.forEach(note => {
-            const text = note.querySelector(".note-text").textContent.toLowerCase();
-            note.style.display = text.includes(query) ? "block" : "none";
+
+    if (searchInput) {
+        searchInput.addEventListener("input", () => {
+            const query = searchInput.value.toLowerCase();
+            const notes = document.querySelectorAll(".note");
+
+            notes.forEach(note => {
+                const title = note.querySelector(".note-title")?.textContent.toLowerCase() || "";
+                const text = note.querySelector(".note-text")?.textContent.toLowerCase() || "";
+                const fullText = title + " " + text;
+
+                note.style.display = fullText.includes(query) ? "block" : "none";
+            });
         });
-    });
+    }
+
+    function showFormError(message) {
+        const errorDiv = document.getElementById("formError");
+        errorDiv.textContent = message;
+    }
+
+    function clearFormError() {
+        const errorDiv = document.getElementById("formError");
+        errorDiv.textContent = "";
+    }
+
+    function formatDate(dateString) {
+        if (!dateString) {
+            return "";
+        }
+
+        const date = new Date(dateString);
+
+        if (isNaN(date.getTime())) {
+            return dateString;
+        }
+
+        return date.toLocaleString("ru-RU");
+    }
 
     async function loadNotes() {
         const notesList = document.getElementById("notesList");
@@ -118,13 +239,13 @@
             notesList.innerHTML = "";
 
             if (notes.length === 0) {
-                notesList.innerHTML = "<p>Заметок пока нет</p>";
+                notesList.innerHTML = "<p class='empty-text'>Заметок пока нет</p>";
                 return;
             }
 
             notes.forEach(renderNote);
         } catch (error) {
-            notesList.innerHTML = "<p>Не удалось загрузить заметки</p>";
+            notesList.innerHTML = "<p class='empty-text'>Не удалось загрузить заметки</p>";
             console.error(error);
         }
     }
@@ -133,170 +254,235 @@
         const notesList = document.getElementById("notesList");
 
         const div = document.createElement("div");
-        div.className = "note";
+        div.className = note.pinned === 1 ? "note note-pinned" : "note";
         div.id = `note-${note.id}`;
-        div.style.background = "white";
-        div.style.padding = "12px";
-        div.style.borderRadius = "10px";
-        div.style.marginBottom = "10px";
-        div.style.border = "1px solid #ddd";
-        div.style.boxShadow = "0 2px 5px rgba(0,0,0,0.1)";
+
+        if (note.pinned === 1) {
+            const pinLabel = document.createElement("div");
+            pinLabel.className = "pin-label";
+            pinLabel.textContent = "📌 Закреплено";
+            div.appendChild(pinLabel);
+        }
+
+        const titleDiv = document.createElement("div");
+        titleDiv.className = "note-title";
+        titleDiv.textContent = note.title || "Без заголовка";
 
         const textDiv = document.createElement("div");
         textDiv.className = "note-text";
         textDiv.textContent = note.text;
 
         const dateDiv = document.createElement("div");
-        dateDiv.textContent = new Date(note.created_at).toLocaleString();
-        dateDiv.style.fontSize = "12px";
-        dateDiv.style.color = "#666";
-        dateDiv.style.marginTop = "5px";
+        dateDiv.className = "note-date";
+        dateDiv.textContent = formatDate(note.created_at);
+
+        const pinButton = document.createElement("button");
+        pinButton.className = "pin-btn";
+        pinButton.textContent = note.pinned === 1 ? "Открепить" : "Закрепить";
+        pinButton.onclick = () => togglePin(note.id, note.pinned);
 
         const editButton = document.createElement("button");
+        editButton.className = "edit-btn";
         editButton.textContent = "Редактировать";
-        editButton.style.marginTop = "10px";
-        editButton.style.background = "#2ea6ff";
-        editButton.style.color = "white";
-        editButton.style.border = "none";
-        editButton.style.borderRadius = "8px";
-        editButton.style.padding = "6px 10px";
-        editButton.style.marginRight = "5px";
-        editButton.onclick = () => showEditForm(note.id, note.text);
+        editButton.onclick = () => showEditForm(note.id, note.title, note.text);
 
         const deleteButton = document.createElement("button");
+        deleteButton.className = "delete-btn";
         deleteButton.textContent = "Удалить";
-        deleteButton.style.marginTop = "10px";
-        deleteButton.style.background = "#ff4d4d";
-        deleteButton.style.color = "white";
-        deleteButton.style.border = "none";
-        deleteButton.style.borderRadius = "8px";
-        deleteButton.style.padding = "6px 10px";
-        deleteButton.onclick = () => showDeleteForm(note.id, note.text);
+        deleteButton.onclick = () => showDeleteForm(note.id, note.title, note.text);
 
+        div.appendChild(titleDiv);
         div.appendChild(textDiv);
         div.appendChild(dateDiv);
+        div.appendChild(pinButton);
         div.appendChild(editButton);
         div.appendChild(deleteButton);
 
         notesList.appendChild(div);
     }
 
-    function showEditForm(noteId, oldText) {
+    function showEditForm(noteId, oldTitle, oldText) {
         const noteDiv = document.getElementById(`note-${noteId}`);
         noteDiv.innerHTML = "";
 
+        const editError = document.createElement("div");
+        editError.className = "form-error";
+        editError.style.marginBottom = "10px";
+
+        const titleInput = document.createElement("input");
+        titleInput.type = "text";
+        titleInput.value = oldTitle || "";
+        titleInput.placeholder = "Заголовок заметки...";
+
         const textarea = document.createElement("textarea");
-        textarea.value = oldText;
+        textarea.value = oldText || "";
         textarea.style.minHeight = "90px";
-        textarea.style.width = "100%";
 
         const saveButton = document.createElement("button");
+        saveButton.className = "edit-btn";
         saveButton.textContent = "Сохранить";
-        saveButton.style.marginTop = "10px";
-        saveButton.style.background = "#2ea6ff";
-        saveButton.style.color = "white";
-        saveButton.style.border = "none";
-        saveButton.style.borderRadius = "8px";
-        saveButton.style.padding = "6px 10px";
-        saveButton.onclick = () => updateNote(noteId, textarea.value);
+        saveButton.onclick = () => updateNote(noteId, titleInput.value, textarea.value, editError);
 
         const cancelButton = document.createElement("button");
+        cancelButton.className = "cancel-btn";
         cancelButton.textContent = "Отмена";
-        cancelButton.style.marginTop = "10px";
-        cancelButton.style.background = "#777";
-        cancelButton.style.color = "white";
-        cancelButton.style.border = "none";
-        cancelButton.style.borderRadius = "8px";
-        cancelButton.style.padding = "6px 10px";
         cancelButton.onclick = () => loadNotes();
 
+        noteDiv.appendChild(editError);
+        noteDiv.appendChild(titleInput);
         noteDiv.appendChild(textarea);
         noteDiv.appendChild(saveButton);
         noteDiv.appendChild(cancelButton);
     }
 
-    function showDeleteForm(noteId, noteText) {
+    function showDeleteForm(noteId, noteTitle, noteText) {
         const noteDiv = document.getElementById(`note-${noteId}`);
         noteDiv.innerHTML = "";
 
         const warningText = document.createElement("div");
+        warningText.className = "delete-warning";
         warningText.textContent = "Удалить эту заметку?";
-        warningText.style.fontWeight = "bold";
-        warningText.style.marginBottom = "10px";
+
+        const titleDiv = document.createElement("div");
+        titleDiv.className = "note-title";
+        titleDiv.textContent = noteTitle || "Без заголовка";
 
         const textDiv = document.createElement("div");
+        textDiv.className = "note-text";
         textDiv.textContent = noteText;
-        textDiv.style.marginBottom = "10px";
 
         const confirmButton = document.createElement("button");
+        confirmButton.className = "delete-btn";
         confirmButton.textContent = "Да, удалить";
-        confirmButton.style.marginTop = "10px";
-        confirmButton.style.background = "#ff4d4d";
-        confirmButton.style.color = "white";
-        confirmButton.style.border = "none";
-        confirmButton.style.borderRadius = "8px";
-        confirmButton.style.padding = "6px 10px";
         confirmButton.onclick = () => deleteNote(noteId);
 
         const cancelButton = document.createElement("button");
+        cancelButton.className = "cancel-btn";
         cancelButton.textContent = "Отмена";
-        cancelButton.style.marginTop = "10px";
-        cancelButton.style.background = "#777";
-        cancelButton.style.color = "white";
-        cancelButton.style.border = "none";
-        cancelButton.style.borderRadius = "8px";
-        cancelButton.style.padding = "6px 10px";
         cancelButton.onclick = () => loadNotes();
 
         noteDiv.appendChild(warningText);
+        noteDiv.appendChild(titleDiv);
         noteDiv.appendChild(textDiv);
         noteDiv.appendChild(confirmButton);
         noteDiv.appendChild(cancelButton);
     }
 
     async function saveNote() {
+        const titleInput = document.getElementById("noteTitle");
         const textarea = document.getElementById("noteText");
+
+        const title = titleInput.value.trim();
         const text = textarea.value.trim();
 
-        if (!text) return alert("Сначала напиши текст заметки");
+        clearFormError();
+
+        if (!title && !text) {
+            showFormError("Напиши заголовок и текст заметки");
+            return;
+        }
+
+        if (!title) {
+            showFormError("Сначала напиши заголовок заметки");
+            return;
+        }
+
+        if (!text) {
+            showFormError("Сначала напиши текст заметки");
+            return;
+        }
 
         try {
             await fetch(`${API_URL}/notes`, {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({user_id: userId, text})
+                body: JSON.stringify({
+                    user_id: userId,
+                    title: title,
+                    text: text
+                })
             });
+
+            titleInput.value = "";
             textarea.value = "";
+            clearFormError();
             loadNotes();
         } catch (error) {
-            alert("Ошибка при сохранении заметки");
+            showFormError("Ошибка при сохранении заметки");
             console.error(error);
         }
     }
 
-    async function updateNote(noteId, newText) {
+    async function updateNote(noteId, newTitle, newText, errorElement) {
+        const title = newTitle.trim();
         const text = newText.trim();
-        if (!text) return alert("Заметка не может быть пустой");
+
+        errorElement.textContent = "";
+
+        if (!title && !text) {
+            errorElement.textContent = "Напиши заголовок и текст заметки";
+            return;
+        }
+
+        if (!title) {
+            errorElement.textContent = "Заголовок не может быть пустым";
+            return;
+        }
+
+        if (!text) {
+            errorElement.textContent = "Текст заметки не может быть пустым";
+            return;
+        }
 
         try {
             await fetch(`${API_URL}/notes/${noteId}`, {
                 method: "PUT",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({user_id: userId, text})
+                body: JSON.stringify({
+                    user_id: userId,
+                    title: title,
+                    text: text
+                })
             });
+
             loadNotes();
         } catch (error) {
-            alert("Ошибка при редактировании заметки");
+            errorElement.textContent = "Ошибка при редактировании заметки";
+            console.error(error);
+        }
+    }
+
+    async function togglePin(noteId, currentPinned) {
+        const newPinned = currentPinned === 1 ? 0 : 1;
+
+        try {
+            await fetch(`${API_URL}/notes/${noteId}/pin`, {
+                method: "PUT",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    user_id: userId,
+                    pinned: newPinned
+                })
+            });
+
+            loadNotes();
+        } catch (error) {
+            const noteDiv = document.getElementById(`note-${noteId}`);
+            noteDiv.innerHTML = "<div class='form-error'>Ошибка при закреплении заметки</div>";
             console.error(error);
         }
     }
 
     async function deleteNote(noteId) {
         try {
-            await fetch(`${API_URL}/notes/${noteId}?user_id=${userId}`, {method: "DELETE"});
+            await fetch(`${API_URL}/notes/${noteId}?user_id=${userId}`, {
+                method: "DELETE"
+            });
+
             loadNotes();
         } catch (error) {
-            alert("Ошибка при удалении заметки");
+            const noteDiv = document.getElementById(`note-${noteId}`);
+            noteDiv.innerHTML = "<div class='form-error'>Ошибка при удалении заметки</div>";
             console.error(error);
         }
     }

@@ -28,6 +28,11 @@ class NoteUpdate(BaseModel):
     text: str
 
 
+class NotePinUpdate(BaseModel):
+    user_id: int
+    pinned: int
+
+
 def init_db():
     conn = sqlite3.connect("notes.db")
     cursor = conn.cursor()
@@ -38,11 +43,11 @@ def init_db():
             user_id INTEGER NOT NULL,
             title TEXT NOT NULL DEFAULT '',
             text TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            pinned INTEGER NOT NULL DEFAULT 0
         )
     """)
 
-    # Если таблица была создана раньше без нужных колонок — добавим их
     cursor.execute("PRAGMA table_info(notes)")
     columns = [column[1] for column in cursor.fetchall()]
 
@@ -51,6 +56,9 @@ def init_db():
 
     if "title" not in columns:
         cursor.execute("ALTER TABLE notes ADD COLUMN title TEXT DEFAULT ''")
+
+    if "pinned" not in columns:
+        cursor.execute("ALTER TABLE notes ADD COLUMN pinned INTEGER DEFAULT 0")
 
     conn.commit()
     conn.close()
@@ -70,7 +78,12 @@ def get_notes(user_id: int = Query(...)):
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT id, title, text, created_at FROM notes WHERE user_id = ? ORDER BY id DESC",
+        """
+        SELECT id, title, text, created_at, pinned
+        FROM notes
+        WHERE user_id = ?
+        ORDER BY pinned DESC, id DESC
+        """,
         (user_id,)
     )
 
@@ -84,7 +97,8 @@ def get_notes(user_id: int = Query(...)):
             "id": row[0],
             "title": row[1],
             "text": row[2],
-            "created_at": row[3]
+            "created_at": row[3],
+            "pinned": row[4]
         })
 
     return notes
@@ -96,8 +110,8 @@ def create_note(note: NoteCreate):
     cursor = conn.cursor()
 
     cursor.execute(
-        "INSERT INTO notes (user_id, title, text, created_at) VALUES (?, ?, ?, ?)",
-        (note.user_id, note.title, note.text, datetime.now().isoformat())
+        "INSERT INTO notes (user_id, title, text, created_at, pinned) VALUES (?, ?, ?, ?, ?)",
+        (note.user_id, note.title, note.text, datetime.now().isoformat(), 0)
     )
 
     conn.commit()
@@ -124,6 +138,29 @@ def update_note(note_id: int, note: NoteUpdate):
         return {"message": "Заметка не найдена или принадлежит другому пользователю"}
 
     return {"message": "Заметка обновлена"}
+
+
+@app.put("/notes/{note_id}/pin")
+def update_pin(note_id: int, note: NotePinUpdate):
+    conn = sqlite3.connect("notes.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "UPDATE notes SET pinned = ? WHERE id = ? AND user_id = ?",
+        (note.pinned, note_id, note.user_id)
+    )
+
+    conn.commit()
+    updated_count = cursor.rowcount
+    conn.close()
+
+    if updated_count == 0:
+        return {"message": "Заметка не найдена или принадлежит другому пользователю"}
+
+    if note.pinned == 1:
+        return {"message": "Заметка закреплена"}
+
+    return {"message": "Заметка откреплена"}
 
 
 @app.delete("/notes/{note_id}")
